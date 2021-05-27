@@ -42,6 +42,14 @@ func TestAccIBMISPublicGatewaysDatasource_basic(t *testing.T) {
 					resource.TestCheckResourceAttrSet(resName, "public_gateways.0.zone"),
 				),
 			},
+			{
+				Config: testAccCheckIBMISPublicGatewaysDataSourceFilteredConfig(),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resName, "public_gateways.0.id"),
+					resource.TestCheckResourceAttrSet(resName, "public_gateways.0.name"),
+					resource.TestCheckResourceAttrSet(resName, "public_gateways.0.zone"),
+				),
+			},
 		},
 	})
 }
@@ -49,5 +57,15 @@ func TestAccIBMISPublicGatewaysDatasource_basic(t *testing.T) {
 func testAccCheckIBMISPublicGatewaysDataSourceConfig() string {
 	return fmt.Sprintf(`
 	data "ibm_is_public_gateways" "test1"{
+	}`)
+}
+
+func testAccCheckIBMISPublicGatewaysDataSourceFilteredConfig() string {
+	return fmt.Sprintf(`
+	data "ibm_is_public_gateways" "test1"{
+		filter {
+			name = "zone"
+			values = ["us-south-1", "us-south-2"]
+		}
 	}`)
 }
