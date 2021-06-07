@@ -236,6 +236,7 @@ The following arguments are supported:
 `boot_volume` block have the following structure:
   * `name` - (Optional, string) The name of the boot volume.
   * `encryption` -(Optional, string) 	The CRN of the root key to use to wrap the data encryption key for the volume. If this property is not provided but the image is encrypted, the image's encryption_key will be used. Otherwise, the encryption type for the volume will be `provider_managed`.
+  * `size` - (Optional, int) The capacity of the boot volume in gigabytes, minimum to `10 ` and maximum to `16000`. (must not be less than the current boot volume capacity). If unspecified, the capacity will be the image's minimum_provisioned_size.
 * `keys` - (Required, list) Comma separated IDs of ssh keys.
 * `primary_network_interface` - (Required, list) A nested block describing the primary network interface of this instance. We can have only one primary network interface.
 Nested `primary_network_interface` block have the following structure:

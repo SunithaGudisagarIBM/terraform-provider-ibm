@@ -276,8 +276,10 @@ func resourceIBMISInstanceTemplate() *schema.Resource {
 							Computed: true,
 						},
 						isInstanceTemplateBootSize: {
-							Type:     schema.TypeInt,
-							Computed: true,
+							Type:         schema.TypeInt,
+							Optional:     true,
+							Computed:     true,
+							ValidateFunc: InvokeValidator("ibm_is_instance_template", isInstanceTemplateBootSize),
 						},
 						isInstanceTemplateBootProfile: {
 							Type:     schema.TypeString,
@@ -342,6 +344,22 @@ func resourceIBMISInstanceTemplate() *schema.Resource {
 			},
 		},
 	}
+}
+
+func resourceIBMISInstanceTemplateValidator() *ResourceValidator {
+
+	validateSchema := make([]ValidateSchema, 1)
+	validateSchema = append(validateSchema,
+		ValidateSchema{
+			Identifier:                 isInstanceTemplateBootSize,
+			ValidateFunctionIdentifier: IntBetween,
+			Type:                       TypeInt,
+			Optional:                   true,
+			MinValue:                   "10",
+			MaxValue:                   "16000"})
+
+	ibmISInstanceValidator := ResourceValidator{ResourceName: "ibm_is_instance_template", Schema: validateSchema}
+	return &ibmISInstanceValidator
 }
 
 func resourceIBMisInstanceTemplateCreate(d *schema.ResourceData, meta interface{}) error {
@@ -443,11 +461,12 @@ func instanceTemplateCreate(d *schema.ResourceData, meta interface{}, profile, n
 		if ok {
 			volTemplate.Name = &namestr
 		}
-
-		volcap := 100
-		volcapint64 := int64(volcap)
+		volcap, ok := bootvol[isInstanceTemplateBootName]
+		if ok {
+			volcapint64 := int64(volcap.(int))
+			volTemplate.Capacity = &volcapint64
+		}
 		volprof := "general-purpose"
-		volTemplate.Capacity = &volcapint64
 		volTemplate.Profile = &vpcv1.VolumeProfileIdentity{
 			Name: &volprof,
 		}
@@ -475,10 +494,10 @@ func instanceTemplateCreate(d *schema.ResourceData, meta interface{}, profile, n
 	// Handle volume attachments
 	if volsintf, ok := d.GetOk(isInstanceTemplateVolumeAttachments); ok {
 		vols := volsintf.([]interface{})
-		var intfs []vpcv1.VolumeAttachmentPrototypeInstanceContext
+		var intfs []vpcv1.VolumeAttachmentPrototype
 		for _, resource := range vols {
 			vol := resource.(map[string]interface{})
-			volInterface := &vpcv1.VolumeAttachmentPrototypeInstanceContext{}
+			volInterface := &vpcv1.VolumeAttachmentPrototype{}
 			deleteVolBool := vol[isInstanceTemplateVolumeDeleteOnInstanceDelete].(bool)
 			volInterface.DeleteVolumeOnInstanceDelete = &deleteVolBool
 			attachmentnamestr := vol[isInstanceTemplateVolAttachmentName].(string)
@@ -486,7 +505,7 @@ func instanceTemplateCreate(d *schema.ResourceData, meta interface{}, profile, n
 			volIdStr := vol[isInstanceTemplateVolAttVol].(string)
 
 			if volIdStr != "" {
-				volInterface.Volume = &vpcv1.VolumeAttachmentVolumePrototypeInstanceContextVolumeIdentity{
+				volInterface.Volume = &vpcv1.VolumeAttachmentPrototypeVolume{
 					ID: &volIdStr,
 				}
 			} else {
@@ -495,7 +514,7 @@ func instanceTemplateCreate(d *schema.ResourceData, meta interface{}, profile, n
 				profileName := newvol[isInstanceTemplateVolAttVolProfile].(string)
 				capacity := int64(newvol[isInstanceTemplateVolAttVolCapacity].(int))
 
-				volPrototype := &vpcv1.VolumeAttachmentVolumePrototypeInstanceContextVolumePrototypeInstanceContext{
+				volPrototype := &vpcv1.VolumeAttachmentPrototypeVolume{
 					Profile: &vpcv1.VolumeProfileIdentity{
 						Name: &profileName,
 					},
@@ -561,7 +580,9 @@ func instanceTemplateCreate(d *schema.ResourceData, meta interface{}, profile, n
 
 		if IPAddress, ok := primnic[isInstanceTemplateNicPrimaryIpv4Address]; ok {
 			if PrimaryIpv4Address := IPAddress.(string); PrimaryIpv4Address != "" {
-				primnicobj.PrimaryIpv4Address = &PrimaryIpv4Address
+				networkInterfaceIPPrototype := &vpcv1.NetworkInterfaceIPPrototype{}
+				networkInterfaceIPPrototype.ID = &PrimaryIpv4Address
+				primnicobj.PrimaryIP = networkInterfaceIPPrototype
 			}
 		}
 	}
@@ -605,7 +626,9 @@ func instanceTemplateCreate(d *schema.ResourceData, meta interface{}, profile, n
 			}
 			if IPAddress, ok := nic[isInstanceTemplateNicPrimaryIpv4Address]; ok {
 				if PrimaryIpv4Address := IPAddress.(string); PrimaryIpv4Address != "" {
-					nwInterface.PrimaryIpv4Address = &PrimaryIpv4Address
+					networkInterfaceIPPrototype := &vpcv1.NetworkInterfaceIPPrototype{}
+					networkInterfaceIPPrototype.ID = &PrimaryIpv4Address
+					nwInterface.PrimaryIP = networkInterfaceIPPrototype
 				}
 			}
 			intfs = append(intfs, *nwInterface)
@@ -686,8 +709,9 @@ func instanceTemplateGet(d *schema.ResourceData, meta interface{}, ID string) er
 		primaryNicList := make([]map[string]interface{}, 0)
 		currentPrimNic := map[string]interface{}{}
 		currentPrimNic[isInstanceTemplateNicName] = *instance.PrimaryNetworkInterface.Name
-		if instance.PrimaryNetworkInterface.PrimaryIpv4Address != nil {
-			currentPrimNic[isInstanceTemplateNicPrimaryIpv4Address] = *instance.PrimaryNetworkInterface.PrimaryIpv4Address
+		if instance.PrimaryNetworkInterface.PrimaryIP != nil {
+			networkInterfaceIPPrototype := *instance.PrimaryNetworkInterface.PrimaryIP.(*vpcv1.NetworkInterfaceIPPrototype)
+			currentPrimNic[isInstanceTemplateNicPrimaryIpv4Address] = networkInterfaceIPPrototype.Address
 		}
 		subInf := instance.PrimaryNetworkInterface.Subnet
 		subnetIdentity := subInf.(*vpcv1.SubnetIdentity)
@@ -713,8 +737,9 @@ func instanceTemplateGet(d *schema.ResourceData, meta interface{}, ID string) er
 		for _, intfc := range instance.NetworkInterfaces {
 			currentNic := map[string]interface{}{}
 			currentNic[isInstanceTemplateNicName] = *intfc.Name
-			if intfc.PrimaryIpv4Address != nil {
-				currentNic[isInstanceTemplateNicPrimaryIpv4Address] = *intfc.PrimaryIpv4Address
+			if intfc.PrimaryIP != nil {
+				networkInterfaceIPPrototype := *intfc.PrimaryIP.(*vpcv1.NetworkInterfaceIPPrototype)
+				currentNic[isInstanceTemplateNicPrimaryIpv4Address] = networkInterfaceIPPrototype.Address
 			}
 			if intfc.AllowIPSpoofing != nil {
 				currentNic[isInstanceTemplateNicAllowIPSpoofing] = *intfc.AllowIPSpoofing
@@ -757,7 +782,7 @@ func instanceTemplateGet(d *schema.ResourceData, meta interface{}, ID string) er
 			newVolumeArr := []map[string]interface{}{}
 			newVolume := map[string]interface{}{}
 			volumeIntf := volume.Volume
-			volumeInst := volumeIntf.(*vpcv1.VolumeAttachmentVolumePrototypeInstanceContext)
+			volumeInst := volumeIntf.(*vpcv1.VolumeAttachmentPrototypeVolume)
 			if volumeInst.ID != nil {
 				volumeAttach[isInstanceTemplateVolAttVol] = *volumeInst.ID
 			}

@@ -192,6 +192,7 @@ The following arguments are supported:
   * `encryption` - (Optional, string) encryption key CRN to encrypt the boot volume attached. 
   * `name` - (Optional, string) Name of the boot volume.
   * `delete_volume_on_instance_delete` - (Optional, bool) Configured to delete the boot volume to be deleted upon instance deletion.
+  * `size` - (Optional, int) The capacity of the boot volume in gigabytes, minimum to `10 ` and maximum to `16000`. (must not be less than the current boot volume capacity). If unspecified, the capacity will be the image's minimum_provisioned_size.
 * `volume_attachments` - (Optional, list) A nested block describing the storage volume configuration for the template. Nested volume_attachments blocks have the following structure: 
   * `name` - (Required, string) Name of the volume attachment.
   * `volume` - (Optional, string, ForceNew) Storage volume ID created under VPC.

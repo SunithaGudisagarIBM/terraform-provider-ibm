@@ -326,8 +326,10 @@ func resourceIBMISInstance() *schema.Resource {
 							Computed: true,
 						},
 						isInstanceBootSize: {
-							Type:     schema.TypeInt,
-							Computed: true,
+							Type:         schema.TypeInt,
+							Optional:     true,
+							Computed:     true,
+							ValidateFunc: InvokeValidator("ibm_is_instance", isInstanceBootSize),
 						},
 						isInstanceBootIOPS: {
 							Type:     schema.TypeInt,
@@ -542,6 +544,14 @@ func resourceIBMISInstanceValidator() *ResourceValidator {
 			Regexp:                     `^[A-Za-z0-9:_ .-]+$`,
 			MinValueLength:             1,
 			MaxValueLength:             128})
+	validateSchema = append(validateSchema,
+		ValidateSchema{
+			Identifier:                 isInstanceBootSize,
+			ValidateFunctionIdentifier: IntBetween,
+			Type:                       TypeInt,
+			Optional:                   true,
+			MinValue:                   "10",
+			MaxValue:                   "16000"})
 
 	ibmISInstanceValidator := ResourceValidator{ResourceName: "ibm_is_instance", Schema: validateSchema}
 	return &ibmISInstanceValidator
@@ -730,6 +740,7 @@ func classicInstanceCreate(d *schema.ResourceData, meta interface{}, profile, na
 }
 
 func instanceCreate(d *schema.ResourceData, meta interface{}, profile, name, vpcID, zone, image string) error {
+	log.Println("instanceCreate")
 	sess, err := vpcClient(meta)
 	if err != nil {
 		return err
@@ -781,10 +792,15 @@ func instanceCreate(d *schema.ResourceData, meta interface{}, profile, name, vpc
 				CRN: &encstr,
 			}
 		}
-		volcap := 100
-		volcapint64 := int64(volcap)
+		volcap, ok := bootvol[isInstanceBootSize]
+		volcapint64 := int64(volcap.(int))
+		if ok {
+			volTemplate.Capacity = &volcapint64
+			log.Println("volcapint64")
+			log.Println(volcapint64)
+
+		}
 		volprof := "general-purpose"
-		volTemplate.Capacity = &volcapint64
 		volTemplate.Profile = &vpcv1.VolumeProfileIdentity{
 			Name: &volprof,
 		}
@@ -811,7 +827,9 @@ func instanceCreate(d *schema.ResourceData, meta interface{}, profile, name, vpc
 		ipv4, _ := primnic[isInstanceNicPrimaryIpv4Address]
 		ipv4str := ipv4.(string)
 		if ipv4str != "" {
-			primnicobj.PrimaryIpv4Address = &ipv4str
+			primnicobj.PrimaryIP = &vpcv1.NetworkInterfaceIPPrototype{
+				Address: &ipv4str,
+			}
 		}
 		allowIPSpoofing, ok := primnic[isInstanceNicAllowIPSpoofing]
 		allowIPSpoofingbool := allowIPSpoofing.(bool)
@@ -854,7 +872,9 @@ func instanceCreate(d *schema.ResourceData, meta interface{}, profile, name, vpc
 			ipv4, _ := nic[isInstanceNicPrimaryIpv4Address]
 			ipv4str := ipv4.(string)
 			if ipv4str != "" {
-				nwInterface.PrimaryIpv4Address = &ipv4str
+				nwInterface.PrimaryIP = &vpcv1.NetworkInterfaceIPPrototype{
+					Address: &ipv4str,
+				}
 			}
 			allowIPSpoofing, ok := nic[isInstanceNicAllowIPSpoofing]
 			allowIPSpoofingbool := allowIPSpoofing.(bool)
@@ -1332,7 +1352,9 @@ func instanceGet(d *schema.ResourceData, meta interface{}, id string) error {
 		currentPrimNic := map[string]interface{}{}
 		currentPrimNic["id"] = *instance.PrimaryNetworkInterface.ID
 		currentPrimNic[isInstanceNicName] = *instance.PrimaryNetworkInterface.Name
-		currentPrimNic[isInstanceNicPrimaryIpv4Address] = *instance.PrimaryNetworkInterface.PrimaryIpv4Address
+		if instance.PrimaryNetworkInterface.PrimaryIP != nil && instance.PrimaryNetworkInterface.PrimaryIP.Address != nil {
+			currentPrimNic[isInstanceNicPrimaryIpv4Address] = *instance.PrimaryNetworkInterface.PrimaryIP.Address
+		}
 		getnicoptions := &vpcv1.GetInstanceNetworkInterfaceOptions{
 			InstanceID: &id,
 			ID:         instance.PrimaryNetworkInterface.ID,
@@ -1362,7 +1384,9 @@ func instanceGet(d *schema.ResourceData, meta interface{}, id string) error {
 				currentNic := map[string]interface{}{}
 				currentNic["id"] = *intfc.ID
 				currentNic[isInstanceNicName] = *intfc.Name
-				currentNic[isInstanceNicPrimaryIpv4Address] = *intfc.PrimaryIpv4Address
+				if intfc.PrimaryIP != nil && intfc.PrimaryIP.Address != nil {
+					currentNic[isInstanceNicPrimaryIpv4Address] = *intfc.PrimaryIP.Address
+				}
 				getnicoptions := &vpcv1.GetInstanceNetworkInterfaceOptions{
 					InstanceID: &id,
 					ID:         intfc.ID,
@@ -1727,7 +1751,7 @@ func instanceUpdate(d *schema.ResourceData, meta interface{}) error {
 			for i := range add {
 				createvolattoptions := &vpcv1.CreateInstanceVolumeAttachmentOptions{
 					InstanceID: &id,
-					Volume: &vpcv1.VolumeIdentity{
+					Volume: &vpcv1.VolumeAttachmentPrototypeVolume{
 						ID: &add[i],
 					},
 					DeleteVolumeOnInstanceDelete: &volautoDelete,

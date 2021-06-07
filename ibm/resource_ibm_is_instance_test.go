@@ -369,11 +369,19 @@ func testAccCheckIBMISInstanceConfig(vpcname, subnetname, sshname, publicKey, na
 		name       = "%s"
 		public_key = "%s"
 	  }
+	  data "ibm_is_images" "is_images" {
+	}
+
 	  
 	  resource "ibm_is_instance" "testacc_instance" {
 		name    = "%s"
-		image   = "%s"
+		image   = data.ibm_is_images.is_images.images.0.id
 		profile = "%s"
+
+		boot_volume {
+			name = "sunitha"
+			size = 100
+		}
 		primary_network_interface {
 		  subnet     = ibm_is_subnet.testacc_subnet.id
 		}
@@ -384,7 +392,7 @@ func testAccCheckIBMISInstanceConfig(vpcname, subnetname, sshname, publicKey, na
 		  subnet = ibm_is_subnet.testacc_subnet.id
 		  name   = "eth1"
 		}
-	  }`, vpcname, subnetname, ISZoneName, ISCIDR, sshname, publicKey, name, isImage, instanceProfileName, ISZoneName)
+	  }`, vpcname, subnetname, ISZoneName, ISCIDR, sshname, publicKey, name, instanceProfileName, ISZoneName)
 }
 
 func testAccCheckIBMISInstanceConfigWithProfile(vpcname, subnetname, sshname, publicKey, name, isInstanceProfileName string) string {
